@@ -14,7 +14,7 @@ const opts = {
   invalidate: true,
   resource_type: "auto",
   folder: "products",
-  timeout: 60000, // زيادة وقت الانتظار إلى 60 ثانية
+  timeout: 60000,
 };
 
 module.exports = (image) => {
@@ -44,7 +44,7 @@ module.exports = (image) => {
     cloudinary.uploader.upload(image, opts, (error, result) => {
       if (error) {
         console.error("Cloudinary upload error:", error);
-        return reject(new Error("Failed to upload image to Cloudinary"));
+        return reject(new Error(error.message || "Failed to upload image to Cloudinary"));
       }
       
       if (result && result.secure_url) {

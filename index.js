@@ -10,31 +10,25 @@ const port = 5001;
 
 // Middleware setup
 app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use(cookieParser());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(
-    cors({
-        // origin:"https://genuine-f-delta.vercel.app",
-        origin:"https://www.genuineman.store",
-        // origin: "http://localhost:5173",//مال الفرونت اند
-        credentials: true,
-    })
-);
+app.use(bodyParser.json({ limit: "25mb" }));
+app.use(bodyParser.urlencoded({ extended: true, limit: "25mb" }));
 
+// تحسين إعدادات CORS
+const corsOptions = {
+  origin: ["https://www.genuineman.store", "http://localhost:5173"],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+app.use(cors(corsOptions));
 
 // دعم طلبات OPTIONS (Preflight Requests)
-app.options('*', (req, res) => {
-    res.header('Access-Control-Allow-Origin', 'https://www.genuineman.store');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.send();
-})
-
-// رفع الصور
-const uploadImage = require("./src/utils/uploadImage");
+app.options('*', cors(corsOptions));
 
 // جميع الروابط
+const authRoutes = require("./src/utils/uploadImage");
 const authRoutes = require("./src/users/user.route");
 const productRoutes = require("./src/products/products.route");
 const reviewRoutes = require("./src/reviews/reviews.router");
@@ -46,7 +40,6 @@ app.use("/api/products", productRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/stats", statsRoutes);
-
 
 // الاتصال بقاعدة البيانات
 main()
@@ -65,7 +58,10 @@ async function main() {
 app.post("/api/uploadImage", (req, res) => {
     uploadImage(req.body.image)
         .then((url) => res.send(url))
-        .catch((err) => res.status(500).send(err));
+        .catch((err) => {
+            console.error("Error uploading image:", err);
+            res.status(500).send(err.message || "Failed to upload image");
+        });
 });
 
 // رفع عدة صور
@@ -73,17 +69,23 @@ app.post("/api/uploadImages", async (req, res) => {
     try {
         const { images } = req.body;
         if (!images || !Array.isArray(images)) {
-            return res.status(400).send("Invalid request: images array is required.");
+            return res.status(400).json({ error: "Invalid request: images array is required." });
         }
 
         const uploadPromises = images.map((image) => uploadImage(image));
         const urls = await Promise.all(uploadPromises);
 
-        res.send(urls);
+        res.json(urls);
     } catch (error) {
         console.error("Error uploading images:", error);
-        res.status(500).send("Internal Server Error");
+        res.status(500).json({ error: error.message || "Internal Server Error" });
     }
+});
+
+// معالجة الأخطاء
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
 });
 
 // تشغيل الخادم
