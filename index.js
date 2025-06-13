@@ -6,35 +6,41 @@ const path = require("path");
 require("dotenv").config();
 const cookieParser = require("cookie-parser");
 const bodyParser = require("body-parser");
-const port = 5001;
+const port = process.env.PORT || 5001;
 
 // Middleware setup
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// CORS configuration
+const allowedOrigins = [
+  "https://www.genuineman.store",
+  "https://genuineman.store",
+  "http://localhost:5173"
+];
+
 app.use(
-    cors({
-        // origin:"https://genuine-f-delta.vercel.app",
-        origin:"https://www.genuineman.store",
-        // origin: "http://localhost:5173",//مال الفرونت اند
-        credentials: true,
-    })
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
 );
 
+// Handle preflight requests
+app.options("*", cors());
 
-// دعم طلبات OPTIONS (Preflight Requests)
-app.options('*', (req, res) => {
-    res.header('Access-Control-Allow-Origin', 'https://www.genuineman.store');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.send();
-})
-
-// رفع الصور
-const uploadImage = require("./src/utils/uploadImage");
-
-// جميع الروابط
+// Routes
 const authRoutes = require("./src/users/user.route");
 const productRoutes = require("./src/products/products.route");
 const reviewRoutes = require("./src/reviews/reviews.router");
@@ -47,46 +53,67 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/stats", statsRoutes);
 
-
-// الاتصال بقاعدة البيانات
-main()
-    .then(() => console.log("MongoDB is successfully connected."))
-    .catch((err) => console.log(err));
-
+// Database connection
 async function main() {
-    await mongoose.connect(process.env.DB_URL);
-
-    app.get("/", (req, res) => {
-        res.send("يعمل الان");
+  try {
+    await mongoose.connect(process.env.DB_URL, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
     });
+    console.log("MongoDB is successfully connected.");
+  } catch (err) {
+    console.error("MongoDB connection error:", err);
+  }
 }
 
-// رفع صورة واحدة
-app.post("/uploadImage", (req, res) => {
-    uploadImage(req.body.image)
-        .then((url) => res.send(url))
-        .catch((err) => res.status(500).send(err));
+main();
+
+// Image upload endpoints
+const uploadImage = require("./src/utils/uploadImage");
+
+// Upload single image
+app.post("/api/uploadImage", (req, res) => {
+  uploadImage(req.body.image)
+    .then((url) => res.json({ success: true, url }))
+    .catch((err) => {
+      console.error("Upload error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    });
 });
 
-// رفع عدة صور
-app.post("/uploadImages", async (req, res) => {
-    try {
-        const { images } = req.body;
-        if (!images || !Array.isArray(images)) {
-            return res.status(400).send("Invalid request: images array is required.");
-        }
-
-        const uploadPromises = images.map((image) => uploadImage(image));
-        const urls = await Promise.all(uploadPromises);
-
-        res.send(urls);
-    } catch (error) {
-        console.error("Error uploading images:", error);
-        res.status(500).send("Internal Server Error");
+// Upload multiple images
+app.post("/api/uploadImages", async (req, res) => {
+  try {
+    const { images } = req.body;
+    if (!images || !Array.isArray(images)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request: images array is required",
+      });
     }
+
+    const uploadPromises = images.map((image) => uploadImage(image));
+    const urls = await Promise.all(uploadPromises);
+
+    res.json({ success: true, urls });
+  } catch (error) {
+    console.error("Error uploading images:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Internal Server Error",
+    });
+  }
 });
 
-// تشغيل الخادم
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "healthy",
+    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  });
+});
+
+// Start server
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Server is running on port ${port}`);
 });
